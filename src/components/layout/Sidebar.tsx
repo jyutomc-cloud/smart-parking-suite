@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   Car, 
   LayoutDashboard, 
@@ -13,14 +14,17 @@ import {
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Kelola User", href: "/dashboard/users", icon: Users },
-  { name: "Area Parkir", href: "/dashboard/areas", icon: MapPin },
   { name: "Transaksi", href: "/dashboard/transactions", icon: ArrowLeftRight },
   { name: "Laporan", href: "/dashboard/reports", icon: FileText },
-  { name: "Pengaturan", href: "/dashboard/settings", icon: Settings },
 ];
 
 const Sidebar = () => {
   const location = useLocation();
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-[260px] bg-sidebar flex flex-col z-50">
@@ -41,7 +45,8 @@ const Sidebar = () => {
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-1">
           {navigation.map((item) => {
-            const isActive = location.pathname === item.href;
+            const isActive = location.pathname === item.href || 
+              (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
             const Icon = item.icon;
             
             return (
@@ -61,13 +66,13 @@ const Sidebar = () => {
 
       {/* Logout */}
       <div className="p-4 border-t border-sidebar-border">
-        <Link
-          to="/"
-          className="flex items-center gap-3 px-5 py-3 text-destructive hover:bg-destructive/10 rounded-lg transition-colors font-medium"
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-5 py-3 text-destructive hover:bg-destructive/10 rounded-lg transition-colors font-medium w-full"
         >
           <LogOut className="w-5 h-5" />
           <span>Logout</span>
-        </Link>
+        </button>
       </div>
     </aside>
   );
