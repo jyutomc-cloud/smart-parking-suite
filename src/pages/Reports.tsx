@@ -1,25 +1,38 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { TrendingUp, Calendar, Wallet, Car } from "lucide-react";
-import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek } from "date-fns";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, PieChart, Pie, Cell } from "recharts";
+import { TrendingUp, Calendar, Wallet, Car, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { format, subDays } from "date-fns";
 import { id } from "date-fns/locale";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { exportToExcel, exportToPDF } from "@/utils/exportUtils";
+import { toast } from "sonner";
 
 interface Transaction {
   id: string;
-  amount: number;
+  plate_number: string;
   vehicle_type: string;
-  created_at: string;
+  entry_time: string;
+  exit_time: string | null;
+  duration_hours: number | null;
+  amount: number;
   status: string;
+  created_at: string;
 }
 
 const Reports = () => {
+  const { isAdmin, isOwner, isPetugas } = useUserRole();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("weekly");
+
+  const canViewFullReports = isAdmin || isOwner;
+  const canExport = isAdmin || isOwner;
 
   useEffect(() => {
     fetchTransactions();
@@ -47,7 +60,7 @@ const Reports = () => {
 
     const { data, error } = await supabase
       .from("transactions")
-      .select("id, amount, vehicle_type, created_at, status")
+      .select("id, plate_number, vehicle_type, entry_time, exit_time, duration_hours, amount, status, created_at")
       .gte("created_at", startDate.toISOString())
       .eq("status", "completed")
       .order("created_at", { ascending: true });
@@ -66,14 +79,13 @@ const Reports = () => {
     const data: { name: string; revenue: number; transactions: number }[] = [];
     
     if (period === "monthly") {
-      // Group by month
       const monthlyData: { [key: string]: { revenue: number; transactions: number } } = {};
       transactions.forEach(tx => {
         const monthKey = format(new Date(tx.created_at), "MMM yyyy", { locale: id });
         if (!monthlyData[monthKey]) {
           monthlyData[monthKey] = { revenue: 0, transactions: 0 };
         }
-        monthlyData[monthKey].revenue += tx.amount;
+        monthlyData[monthKey].revenue += tx.amount || 0;
         monthlyData[monthKey].transactions += 1;
       });
       
@@ -81,9 +93,7 @@ const Reports = () => {
         data.push({ name, ...values });
       });
     } else {
-      // Group by day
       const dailyData: { [key: string]: { revenue: number; transactions: number } } = {};
-      const startDate = subDays(new Date(), days);
       
       for (let i = 0; i <= days; i++) {
         const date = subDays(new Date(), days - i);
@@ -94,7 +104,7 @@ const Reports = () => {
       transactions.forEach(tx => {
         const dateKey = format(new Date(tx.created_at), "dd MMM", { locale: id });
         if (dailyData[dateKey]) {
-          dailyData[dateKey].revenue += tx.amount;
+          dailyData[dateKey].revenue += tx.amount || 0;
           dailyData[dateKey].transactions += 1;
         }
       });
@@ -107,7 +117,6 @@ const Reports = () => {
     return data;
   };
 
-  // Calculate vehicle type distribution
   const getVehicleDistribution = () => {
     const distribution: { [key: string]: number } = { motor: 0, mobil: 0 };
     transactions.forEach(tx => {
@@ -121,8 +130,7 @@ const Reports = () => {
     ];
   };
 
-  // Calculate summary stats
-  const totalRevenue = transactions.reduce((sum, tx) => sum + tx.amount, 0);
+  const totalRevenue = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0);
   const totalTransactions = transactions.length;
   const avgRevenue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
@@ -136,10 +144,81 @@ const Reports = () => {
     return `Rp ${amount}`;
   };
 
+  const getPeriodLabel = () => {
+    switch (period) {
+      case "daily": return "7 Hari Terakhir";
+      case "weekly": return "30 Hari Terakhir";
+      case "monthly": return "12 Bulan Terakhir";
+      default: return "30 Hari Terakhir";
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (transactions.length === 0) {
+      toast.error("Tidak ada data untuk diexport");
+      return;
+    }
+    exportToExcel({
+      transactions,
+      period: getPeriodLabel(),
+      totalRevenue,
+      totalTransactions
+    });
+    toast.success("Laporan Excel berhasil diunduh");
+  };
+
+  const handleExportPDF = () => {
+    if (transactions.length === 0) {
+      toast.error("Tidak ada data untuk diexport");
+      return;
+    }
+    exportToPDF({
+      transactions,
+      period: getPeriodLabel(),
+      totalRevenue,
+      totalTransactions
+    });
+    toast.success("Laporan PDF berhasil diunduh");
+  };
+
   const chartConfig = {
     revenue: { label: "Pendapatan", color: "hsl(var(--primary))" },
     transactions: { label: "Transaksi", color: "hsl(var(--accent))" }
   };
+
+  // Petugas hanya bisa lihat ringkasan sederhana
+  if (isPetugas && !canViewFullReports) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Laporan</h1>
+          <p className="text-muted-foreground mt-1">Ringkasan aktivitas parkir hari ini</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card className="card-elegant">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Transaksi Hari Ini</p>
+                  <p className="text-2xl font-bold text-foreground">{totalTransactions}</p>
+                </div>
+                <div className="p-3 rounded-full bg-accent/10">
+                  <Car className="w-6 h-6 text-accent" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="card-elegant p-8 text-center">
+          <p className="text-muted-foreground">
+            Untuk melihat laporan lengkap dan grafik analisis, silakan hubungi Admin atau Owner.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -148,17 +227,40 @@ const Reports = () => {
           <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Laporan</h1>
           <p className="text-muted-foreground mt-1">Analisis pendapatan dan statistik parkir</p>
         </div>
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-[180px]">
-            <Calendar className="w-4 h-4 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="daily">7 Hari Terakhir</SelectItem>
-            <SelectItem value="weekly">30 Hari Terakhir</SelectItem>
-            <SelectItem value="monthly">12 Bulan Terakhir</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-3">
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="w-[180px]">
+              <Calendar className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily">7 Hari Terakhir</SelectItem>
+              <SelectItem value="weekly">30 Hari Terakhir</SelectItem>
+              <SelectItem value="monthly">12 Bulan Terakhir</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export ke Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export ke PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -185,7 +287,7 @@ const Reports = () => {
                 <p className="text-2xl font-bold text-foreground">{totalTransactions}</p>
               </div>
               <div className="p-3 rounded-full bg-accent/10">
-                <Car className="w-6 h-6 text-accent-foreground" />
+                <Car className="w-6 h-6 text-accent" />
               </div>
             </div>
           </CardContent>
@@ -208,7 +310,6 @@ const Reports = () => {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Chart */}
         <Card className="card-elegant">
           <CardHeader>
             <CardTitle>Grafik Pendapatan</CardTitle>
@@ -235,7 +336,6 @@ const Reports = () => {
           </CardContent>
         </Card>
 
-        {/* Transactions Chart */}
         <Card className="card-elegant">
           <CardHeader>
             <CardTitle>Jumlah Transaksi</CardTitle>
@@ -265,7 +365,6 @@ const Reports = () => {
           </CardContent>
         </Card>
 
-        {/* Vehicle Distribution */}
         <Card className="card-elegant lg:col-span-2">
           <CardHeader>
             <CardTitle>Distribusi Jenis Kendaraan</CardTitle>
