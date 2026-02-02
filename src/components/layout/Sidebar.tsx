@@ -1,77 +1,107 @@
-import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { NavLink, useNavigate } from "react-router-dom";
 import { 
-  Car, 
   LayoutDashboard, 
+  Car, 
+  Receipt, 
+  BarChart3, 
   Users, 
-  MapPin, 
-  ArrowLeftRight, 
-  FileText, 
+  ParkingCircle,
   LogOut,
-  Settings
+  ChevronRight
 } from "lucide-react";
-
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Kelola User", href: "/dashboard/users", icon: Users },
-  { name: "Transaksi", href: "/dashboard/transactions", icon: ArrowLeftRight },
-  { name: "Laporan", href: "/dashboard/reports", icon: FileText },
-];
+import { useAuth } from "@/contexts/AuthContext";
+import { useUserRole } from "@/hooks/useUserRole";
 
 const Sidebar = () => {
-  const location = useLocation();
   const { signOut } = useAuth();
+  const { isAdmin, isOwner, isPetugas } = useUserRole();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     await signOut();
+    navigate("/login");
   };
 
+  // Define navigation items based on role
+  const getNavItems = () => {
+    const baseItems = [
+      { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    ];
+
+    // Petugas can only access transactions and parking areas (view only)
+    if (isPetugas) {
+      return [
+        ...baseItems,
+        { to: "/dashboard/transactions", icon: Receipt, label: "Transaksi" },
+        { to: "/dashboard/parking-areas", icon: ParkingCircle, label: "Area Parkir" },
+      ];
+    }
+
+    // Owner can see reports and parking areas
+    if (isOwner) {
+      return [
+        ...baseItems,
+        { to: "/dashboard/transactions", icon: Receipt, label: "Transaksi" },
+        { to: "/dashboard/parking-areas", icon: ParkingCircle, label: "Area Parkir" },
+        { to: "/dashboard/reports", icon: BarChart3, label: "Laporan" },
+      ];
+    }
+
+    // Admin has full access
+    return [
+      ...baseItems,
+      { to: "/dashboard/transactions", icon: Receipt, label: "Transaksi" },
+      { to: "/dashboard/parking-areas", icon: ParkingCircle, label: "Area Parkir" },
+      { to: "/dashboard/reports", icon: BarChart3, label: "Laporan" },
+      { to: "/dashboard/users", icon: Users, label: "Kelola User" },
+    ];
+  };
+
+  const navItems = getNavItems();
+
   return (
-    <aside className="fixed left-0 top-0 h-screen w-[260px] bg-sidebar flex flex-col z-50">
-      {/* Brand */}
+    <aside className="fixed left-0 top-0 h-full w-[260px] bg-sidebar-background z-50 flex flex-col">
+      {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
-            <Car className="w-5 h-5 text-accent-foreground" />
+            <Car className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-sidebar-primary">E-PARKING</h1>
-            <p className="text-xs text-sidebar-foreground opacity-70">Manajemen Parkir</p>
+            <h1 className="text-lg font-bold text-white">E-Parking</h1>
+            <p className="text-xs text-sidebar-foreground">Management System</p>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 overflow-y-auto">
-        <ul className="space-y-1">
-          {navigation.map((item) => {
-            const isActive = location.pathname === item.href || 
-              (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
-            const Icon = item.icon;
-            
-            return (
-              <li key={item.name}>
-                <Link
-                  to={item.href}
-                  className={`sidebar-link ${isActive ? "active" : ""}`}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.name}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      <nav className="flex-1 py-6">
+        <div className="space-y-1">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/dashboard"}
+              className={({ isActive }) =>
+                `sidebar-link ${isActive ? "active" : ""}`
+              }
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="flex-1">{item.label}</span>
+              <ChevronRight className="w-4 h-4 opacity-50" />
+            </NavLink>
+          ))}
+        </div>
       </nav>
 
       {/* Logout */}
       <div className="p-4 border-t border-sidebar-border">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-5 py-3 text-destructive hover:bg-destructive/10 rounded-lg transition-colors font-medium w-full"
+          className="flex items-center gap-3 w-full px-5 py-3 text-sidebar-foreground hover:text-white hover:bg-sidebar-accent rounded-lg transition-colors"
         >
           <LogOut className="w-5 h-5" />
-          <span>Logout</span>
+          <span>Keluar</span>
         </button>
       </div>
     </aside>
